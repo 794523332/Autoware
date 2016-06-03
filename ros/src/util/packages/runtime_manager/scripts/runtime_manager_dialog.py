@@ -565,7 +565,7 @@ class MyFrame(rtmgr.MyFrame):
 				for var in prm.get('vars'):
 					name = var.get('name')
 					if not pdic.has(name):
-                                                pdic.set(name, var.get('v'))
+						pdic.set(name, var.get('v'))
 
 				for (name, v) in pdic.items():
 					restore = eval( gdic.get(name, {}).get('restore', 'lambda a : None') )
