@@ -114,7 +114,6 @@ class MyFrame(rtmgr.MyFrame):
 		self.log_que_stdout = Queue.Queue()
 		self.log_que_stderr = Queue.Queue()
 		self.log_que_show = Queue.Queue()
-		self.obj_enables = {}
 
 		#
 		# ros
@@ -204,9 +203,13 @@ class MyFrame(rtmgr.MyFrame):
 		objs = [ self.button_point_cloud,
 			 self.button_launch_points_map_loader,
 			 self.button_launch_points_map_loader_update ]
+		tgls = []
 		for obj in objs:
 			gdic_v = self.obj_to_gdic(obj, {}).get('path_pcd', {})
 			gdic_v['hook_var'] = hook_var
+			tgls.append( self.obj_to_gdic(obj, {}).get('ext_toggle_enables', []) )
+		tgls[1].extend(tgls[0])
+		tgls[2].extend(tgls[0])
 
 		#
 		# for Sensing tab
@@ -571,9 +574,9 @@ class MyFrame(rtmgr.MyFrame):
 					restore = eval( gdic.get(name, {}).get('restore', 'lambda a : None') )
 					restore(v)
 
-				self.add_cfg_info(obj, obj, k, pdic, gdic, False, prm)
+				self.add_cfg_info(obj, obj, k, pdic, gdic, prm)
 			else:
-				self.add_cfg_info(obj, obj, k, None, gdic, False, None)
+				self.add_cfg_info(obj, obj, k, None, gdic, None)
 
 	#def OnDrive(self, event):
 	#	obj = event.GetEventObject()
@@ -905,6 +908,7 @@ class MyFrame(rtmgr.MyFrame):
 			self.publish_param_topic(pdic, prm)
 		self.rosparam_set(pdic, prm)
 		self.update_depend_enable(pdic, gdic, prm)
+		self.setup_fix_on_run(pdic, gdic, prm)
 
 		d = self.cfg_dic( {'pdic':pdic, 'gdic':gdic, 'param':prm}, sys=True )
 		self.update_proc_cpu(d.get('obj'), d.get('pdic'), d.get('param'))
@@ -970,7 +974,7 @@ class MyFrame(rtmgr.MyFrame):
 				continue
 			depend_bool = eval( gdic_v.get('depend_bool', 'lambda v : bool(v)') )
 			v = depend_bool(v)
-			self.obj_enables_set(vp, 'depend', v)
+			enables_set(vp, 'depend', v)
 
 	def publish_param_topic(self, pdic, prm):
 		pub = prm['pub']
@@ -1019,6 +1023,31 @@ class MyFrame(rtmgr.MyFrame):
 			cmd = [ 'rosparam', 'set', rosparam, v ] if v != '' else [ 'rosparam', 'delete', rosparam ]
 			print(cmd)
 			subprocess.call(cmd)
+
+	def setup_fix_on_run(self, pdic, gdic, prm):
+		k = 'fix_on_run'
+		if k not in prm:
+			msg_vars = []
+			if 'pub' in prm:
+				klass_msg = globals()[ prm['msg'] ]
+				msg = klass_msg()
+				for (name, v) in pdic.items():
+					(obj, attr) = msg_path_to_obj_attr(msg, name)
+					if obj and attr in obj.__slots__:
+						msg_vars.append(name)
+			vars_v = True
+			is_not_sys = ( prm.get('name') != 'sys' )
+			for var in prm.get('vars', []):
+				if k not in var:
+					var[k] = var.get('name') not in msg_vars and 'rosparam' not in var and is_not_sys
+				vars_v = vars_v and var.get(k)
+			prm[k] = vars_v
+
+		if prm.get(k) and not lst_append_once(dic_getset(gdic, 'flags', []), 'done_setup_link_toggle'):
+			(cfg_obj, dic) = self.cfg_obj_dic( {'pdic':pdic, 'gdic':gdic, 'param':prm} )
+			if cfg_obj and cfg_obj is not dic.get('obj'):
+				lst = dic_getset(gdic, 'ext_toggle_enables', [])
+				lst_append_once(lst, cfg_obj)
 
 	def OnRefresh(self, event):
 		subprocess.call([ 'sh', '-c', 'echo y | rosnode cleanup' ])
@@ -1139,7 +1168,7 @@ class MyFrame(rtmgr.MyFrame):
 				obj = self.add_config_link(dic, panel, obj)
 			else:
 				gdic = self.gdic_get_1st(dic)
-				self.add_cfg_info(obj, obj, dic.get('name'), None, gdic, False, None)
+				self.add_cfg_info(obj, obj, dic.get('name'), None, gdic, None)
 		if sizer is not None:
 			sizer.append((obj, bdr_flg))
 		else:
@@ -1155,7 +1184,7 @@ class MyFrame(rtmgr.MyFrame):
 		pdic = self.load_dic_pdic_setup(name, dic)
 		gdic = self.gdic_get_1st(dic)
 		prm = self.get_param(dic.get('param'))
-		self.add_cfg_info(cfg_obj, obj, name, pdic, gdic, True, prm)
+		self.add_cfg_info(cfg_obj, obj, name, pdic, gdic, prm)
 		return hszr
 
 	def camera_ids(self):
@@ -1215,7 +1244,7 @@ class MyFrame(rtmgr.MyFrame):
 
 			cam_id_obj = self.cam_id_to_obj(cam_id, obj.GetValue())
 			if not pdic_a or not gdic_a:
-				self.add_cfg_info(cam_id_obj, cam_id_obj, cam_id, pdic, gdic, False, prm)
+				self.add_cfg_info(cam_id_obj, cam_id_obj, cam_id, pdic, gdic, prm)
 			if not cam_id_obj in cmd_dic:
 				cmd_dic[ cam_id_obj ] = (cmd, None)
 
@@ -1722,8 +1751,6 @@ class MyFrame(rtmgr.MyFrame):
 		(pdic, gdic, prm) = self.obj_to_pdic_gdic_prm(obj)
 		panel = ParamPanel(parent, frame=self, pdic=pdic, gdic=gdic, prm=prm)
 		sizer_wrap((panel,), wx.VERTICAL, 0, wx.EXPAND, 0, parent)
-		k = 'ext_toggle_enables'
-		gdic[ k ] = gdic.get(k, []) + [ panel ]
 
 	def obj_to_varpanel(self, obj, var_name):
 		gdic = self.obj_to_gdic(obj, {})
@@ -1748,9 +1775,8 @@ class MyFrame(rtmgr.MyFrame):
 		gdic['update_func'] = self.update_func
 		return gdic
 
-	def add_cfg_info(self, cfg_obj, obj, name, pdic, gdic, run_disable, prm):
-		self.config_dic[ cfg_obj ] = { 'obj':obj , 'name':name , 'pdic':pdic , 'gdic':gdic, 
-					       'run_disable':run_disable , 'param':prm }
+	def add_cfg_info(self, cfg_obj, obj, name, pdic, gdic, prm):
+		self.config_dic[ cfg_obj ] = { 'obj':obj , 'name':name , 'pdic':pdic , 'gdic':gdic, 'param':prm }
 
 	def get_param(self, prm_name):
 		return next( (prm for prm in self.params if prm['name'] == prm_name), None)
@@ -1971,7 +1997,7 @@ class MyFrame(rtmgr.MyFrame):
 	def alias_sync(self, obj, v=None):
 		en = None
 		if getattr(obj, 'IsEnabled', None):
-			(key, en) = self.obj_enables_get_last(obj)
+			(key, en) = enables_get_last(obj)
 			if not key:
 				en = obj.IsEnabled()
 		grp = self.alias_grp_get(obj)
@@ -1983,7 +2009,7 @@ class MyFrame(rtmgr.MyFrame):
 			
 			if en is not None and o.IsEnabled() != en and not self.is_toggle_button(o):
 				if key:
-					self.obj_enable_set(o, key, en)
+					enable_set(o, key, en)
 				else:
 					o.Enable(en)
 			if v is not None and getattr(o, 'SetValue', None):
@@ -2020,7 +2046,7 @@ class MyFrame(rtmgr.MyFrame):
 				if 'param' in items:
 					self.new_link(item, name, pdic, gdic, pnl, 'app', items.get('param'), add_objs)
 				else:
-					self.add_cfg_info(item, item, name, None, gdic, False, None)
+					self.add_cfg_info(item, item, name, None, gdic, None)
 				szr = sizer_wrap(add_objs, wx.HORIZONTAL, parent=pnl)
 				szr.Fit(pnl)
 				tree.SetItemWindow(item, pnl)
@@ -2039,7 +2065,7 @@ class MyFrame(rtmgr.MyFrame):
 				add_objs += [ wx.StaticText(pnl, wx.ID_ANY, ' ') ]
 			add_objs += [ wx.StaticText(pnl, wx.ID_ANY, '['), lkc, wx.StaticText(pnl, wx.ID_ANY, ']') ]
 		prm = self.get_param(prm_name)
-		self.add_cfg_info(lkc if lkc else item, item, name, pdic, gdic, False, prm)
+		self.add_cfg_info(lkc if lkc else item, item, name, pdic, gdic, prm)
 
 	def load_dic_pdic_setup(self, name, dic):
 		name = dic.get('share_val', dic.get('name', name))
@@ -2063,10 +2089,6 @@ class MyFrame(rtmgr.MyFrame):
 			set_val(obj, False)
 
 		proc = self.launch_kill(v, cmd, proc, add_args, obj=obj)
-
-		(cfg_obj, dic) = self.cfg_obj_dic( {'obj':obj} )
-		if cfg_obj and dic.get('run_disable'):
-			cfg_obj.Enable(not v)
 
 		cmd_dic[obj] = (cmd, proc)
 		if not v:
@@ -2252,30 +2274,12 @@ class MyFrame(rtmgr.MyFrame):
 	def toggle_enables(self, objs):
 		for obj in objs:
 			if getattr(obj, 'IsEnabled', None):
-				en = self.obj_enables_get(obj, 'toggle', obj.IsEnabled())
-				self.obj_enables_set(obj, 'toggle', not en)
+				en = enables_get(obj, 'toggle', obj.IsEnabled())
+				enables_set(obj, 'toggle', not en)
 				self.alias_sync(obj)
 
 	def is_toggle_button(self, obj):
 		return self.name_get(obj).split('_')[0] == 'button' and getattr(obj, 'GetValue', None)
-
-	def obj_enables_set(self, obj, k, en):
-		d = dic_getset(self.obj_enables, obj, {})
-		d[k] = en
-		d['last_key'] = k
-		obj.Enable( all( d.values() ) )
-
-	def obj_enables_get(self, obj, k, def_ret=None):
-		return self.obj_enables.get(obj, {k:def_ret}).get(k, def_ret)
-
-	def obj_enables_get_last(self, obj):
-		k = self.obj_enables_get(obj, 'last_key')
-		return (k, self.obj_enables_get(obj, k))
-
-	def obj_enables_del(self, obj):
-		d = self.obj_enables
-		if obj in d:
-			del d[obj]
 
 	def obj_name_split(self, obj, pfs):
 		name = self.name_get(obj)
@@ -2373,6 +2377,8 @@ class ParamPanel(wx.Panel):
 			var_lst = lambda name, vars : [ var for var in vars if var.get('name') == name ]
 			vars = reduce( lambda lst, name : lst + var_lst(name, vars), self.gdic.get('show_order'), [] )
 
+		self.frame.setup_fix_on_run(self.pdic, self.gdic, self.prm)
+
 		for var in vars:
 			name = var.get('name')
 
@@ -2439,10 +2445,10 @@ class ParamPanel(wx.Panel):
 			if 'hline' in gdic_v.get('flags', []) and hszr is None:
 				szr.Add(wx.StaticLine(self, wx.ID_ANY), 0, wx.EXPAND | wx.TOP | wx.BOTTOM, 4)
 
-			if not self.in_msg(var) and var.get('rosparam'):
-				k = 'ext_toggle_enables'
-				self.gdic[ k ] = self.gdic.get(k, []) + [ vp ]
-				self.frame.obj_enables_set(vp, 'toggle', proc is None)
+			if var.get('fix_on_run', False):
+				lst = dic_getset(self.gdic, 'ext_toggle_enables', [])
+				lst_append_once(lst, vp)
+				enables_set(vp, 'toggle', proc is None)
 
 			if 'disable' in gdic_v.get('flags', []):
 				vp.Enable(False)
@@ -2472,7 +2478,6 @@ class ParamPanel(wx.Panel):
 
 			vp = gdic_v.get('var')
 			lst_remove_once(self.gdic.get('ext_toggle_enables', []), vp)
-			self.frame.obj_enables_del(vp)
 
 	def in_msg(self, var):
 		if 'topic' not in self.prm or 'msg' not in self.prm:
@@ -3359,6 +3364,25 @@ def set_val(obj, v):
 	if type(obj) is wx.ToggleButton:
 		button_color_change(obj)
 
+def enables_set(obj, k, en):
+	d = attr_getset(obj, 'enabLes', {})
+	d[k] = en
+	d['last_key'] = k
+	obj.Enable( all( d.values() ) )
+	if isinstance(obj, wx.HyperlinkCtrl):
+		if not hasattr(obj, 'coLor'):
+			obj.coLor = { True:obj.GetNormalColour(), False:'#808080' }
+		c = obj.coLor.get(obj.IsEnabled())
+		obj.SetNormalColour(c)
+		obj.SetVisitedColour(c)
+
+def enables_get(obj, k, def_ret=None):
+	return attr_getset(obj, 'enabLes', {}).get(k, def_ret)
+
+def enables_get_last(obj):
+	k = enables_get(obj, 'last_key')
+	return (k, enables_get(obj, k))
+
 def obj_refresh(obj):
 	if type(obj) is CT.GenericTreeItem:
 		while obj.GetParent():
@@ -3393,6 +3417,11 @@ def bak_stk_set(dic, key, v):
 	bak_str_push(dic, key)
 	dic[key] = v
 
+
+def attr_getset(obj, name, def_ret):
+	if not hasattr(obj, name):
+		setattr(obj, name, def_ret)
+	return getattr(obj, name)
 
 def dic_getset(dic, key, def_ret):
 	if key not in dic:
