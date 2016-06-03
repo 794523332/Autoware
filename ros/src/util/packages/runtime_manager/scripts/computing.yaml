@@ -68,10 +68,8 @@ subs :
         cmd  : roslaunch cv_tracker dpm_ocv.launch
         param: dpm_ocv
         gui  :
-          flags                  : [ open_dialog, need_camera_info ]
-          config_dialog          : MyDialogCarPedestrian
-          car_pedestrian_obj_key : { car : car_dpm, pedestrian : pedestrian_dpm }
-          open_dialog            : MyDialogDpm
+          links : [ app, car, pedestrian ]
+          flags : [ need_camera_info ]
           use_gpu :
             flags  : [ nl ]
           car :
@@ -90,11 +88,20 @@ subs :
       - name : dpm_ttic
         cmd  : roslaunch cv_tracker dpm_ttic.launch
         param: dpm_ttic
+        share:
+          score_threshold            : dpm_ocv
+          group_threshold            : dpm_ocv
+          Lambda                     : dpm_ocv
+          num_cells                  : dpm_ocv
+          num_bins                   : dpm_ocv
+          pedestrian_score_threshold : dpm_ocv
+          pedestrian_group_threshold : dpm_ocv
+          pedestrian_Lambda          : dpm_ocv
+          pedestrian_num_cells       : dpm_ocv
+          pedestrian_num_bins        : dpm_ocv
         gui  :
-          flags                  : [ open_dialog, need_camera_info ]
-          config_dialog          : MyDialogCarPedestrian
-          car_pedestrian_obj_key : { car : car_dpm, pedestrian : pedestrian_dpm }
-          open_dialog            : MyDialogDpm
+          links : [ app, car, pedestrian ]
+          flags : [ need_camera_info ]
           use_gpu :
             flags  : [ nl ]
           car :
@@ -127,12 +134,7 @@ subs :
         cmd  : roslaunch cv_tracker ranging.launch
         param: car_fusion
         gui  :
-          flags                  : [ open_dialog ]
-          config_dialog          : MyDialogCarPedestrian
-          car_pedestrian_obj_key : { car : car_fusion, pedestrian : pedestrian_fusion }
-          config_dialog_only     : [ min_low_height, max_low_height, max_height, min_points, dispersion ]
-          open_dialog_only       : [ car, pedestrian ]
-          open_dialog_ok_label   : Start
+          links : [ app, car, pedestrian ]
           car :
             user_category : Detection Target
           pedestrian :
@@ -145,6 +147,7 @@ subs :
         cmd  : roslaunch cv_tracker klt_tracking.launch
         param: car_kf
         gui  :
+          links : [ app, car, pedestrian ]
           flags : [ need_camera_info ]
           sel_cam_dialog_only : [ camera_id ]
           sel_cam_dialog_allow: [ camera_id ]
@@ -158,20 +161,8 @@ subs :
         cmd  : roslaunch cv_tracker kf_tracking.launch
         param: car_kf
         gui  :
-          flags                  : [ open_dialog, need_camera_info ]
-          config_dialog          : MyDialogCarPedestrian
-          car_pedestrian_obj_key : { car : car_kf, pedestrian : pedestrian_kf }
-          config_dialog_only     :
-            - initial_lifespan
-            - default_lifespan
-            - noise_covariance
-            - measurement_noise_covariance
-            - error_estimate_covariance
-            - percentage_of_overlapping
-            - orb_features
-            - use_orb
-          open_dialog_only       : [ car, pedestrian ]
-          open_dialog_ok_label   : Start
+          links : [ app, car, pedestrian ]
+          flags : [ need_camera_info ]
           car :
             user_category : Detection Target
           pedestrian :
@@ -425,23 +416,12 @@ subs :
          param: wf_simulator
          
 buttons:
-  car_dpm :
-    param   : car_dpm
-  pedestrian_dpm :
-    param   : pedestrian_dpm
-  car_fusion :
-    param   : car_fusion
-  pedestrian_fusion :
-    param   : pedestrian_fusion
-  car_kf :
-    param   : car_kf
-  pedestrian_kf :
-    param   : pedestrian_kf
   synchronization :
     run : roslaunch runtime_manager synchronization.launch
 
 sys_gui:
   dialog   : MyDialogParam
+  def_link : sys
   cpu_chks :
     user_category : Migration Allowance
     user_category_add : [ [ all ], 8 ]
@@ -506,6 +486,11 @@ params :
       v        : 20
 
   - name  : dpm_ocv
+    topics:
+    - topic : /config/car_dpm
+      msg   : ConfigCarDpm
+    - topic : /config/pedestrian_dpm
+      msg   : ConfigPedestrianDpm
     vars  :
     - name     : use_gpu
       label    : Use GPU
@@ -554,6 +539,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
     - name      : sync
       kind      : hide
       v         : False
@@ -562,7 +548,91 @@ params :
         delim       : ':='
         only_enable : True
 
+    # for [car] link
+    - name  : score_threshold
+      label : Score Threshold
+      min   : -2
+      max   : 2
+      v     : -0.5
+      link  : car
+      topic : /config/car_dpm
+    - name  : group_threshold
+      label : Group Threshold
+      min   : 0
+      max   : 1
+      v     : 0.1
+      link  : car
+      topic : /config/car_dpm
+    - name  : Lambda
+      label : Lambda
+      min   : 1
+      max   : 20
+      v     : 10
+      link  : car
+      topic : /config/car_dpm
+    - name  : num_cells
+      label : Num Cells
+      min   : 2
+      max   : 10
+      v     : 8
+      link  : car
+      topic : /config/car_dpm
+    - name  : num_bins
+      label : Num Bins
+      min   : 2
+      max   : 10
+      v     : 9
+      link  : car
+      topic : /config/car_dpm
+
+    # for [pedestrian] link
+    - name  : pedestrian_score_threshold
+      label : Score Threshold
+      min   : -2
+      max   : 2
+      v     : 0.6
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: score_threshold
+    - name  : pedestrian_group_threshold
+      label : Group Threshold
+      min   : 0
+      max   : 1
+      v     : 0.3
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: group_threshold
+    - name  : pedestrian_Lambda
+      label : Lambda
+      min   : 1
+      max   : 20
+      v     : 10
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: Lambda
+    - name  : pedestrian_num_cells
+      label : Num Cells
+      min   : 2
+      max   : 10
+      v     : 8
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: num_cells
+    - name  : pedestrian_num_bins
+      label : Num Bins
+      min   : 2
+      max   : 10
+      v     : 9
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: num_bins
+
   - name  : dpm_ttic
+    topics:
+    - topic : /config/car_dpm
+      msg   : ConfigCarDpm
+    - topic : /config/pedestrian_dpm
+      msg   : ConfigPedestrianDpm
     vars  :
     - name     : use_gpu
       label    : Use GPU
@@ -639,6 +709,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
     - name      : sync
       kind      : hide
       v         : False
@@ -647,66 +718,85 @@ params :
         delim       : ':='
         only_enable : True
 
-  - name  : car_dpm
-    topic : /config/car_dpm
-    msg   : ConfigCarDpm
-    vars  :
+    # for [car] link
     - name  : score_threshold
       label : Score Threshold
       min   : -2
       max   : 2
       v     : -0.5
+      link  : car
+      topic : /config/car_dpm
     - name  : group_threshold
       label : Group Threshold
       min   : 0
       max   : 1
       v     : 0.1
+      link  : car
+      topic : /config/car_dpm
     - name  : Lambda
       label : Lambda
       min   : 1
       max   : 20
       v     : 10
+      link  : car
+      topic : /config/car_dpm
     - name  : num_cells
       label : Num Cells
       min   : 2
       max   : 10
       v     : 8
+      link  : car
+      topic : /config/car_dpm
     - name  : num_bins
       label : Num Bins
       min   : 2
       max   : 10
       v     : 9
+      link  : car
+      topic : /config/car_dpm
 
-  - name  : pedestrian_dpm
-    topic : /config/pedestrian_dpm
-    msg   : ConfigPedestrianDpm
-    vars  :
-    - name  : score_threshold
+    # for [pedestrian] link
+    - name  : pedestrian_score_threshold
       label : Score Threshold
       min   : -2
       max   : 2
       v     : 0.6
-    - name  : group_threshold
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: score_threshold
+    - name  : pedestrian_group_threshold
       label : Group Threshold
       min   : 0
       max   : 1
       v     : 0.3
-    - name  : Lambda
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: group_threshold
+    - name  : pedestrian_Lambda
       label : Lambda
       min   : 1
       max   : 20
       v     : 10
-    - name  : num_cells
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: Lambda
+    - name  : pedestrian_num_cells
       label : Num Cells
       min   : 2
       max   : 10
       v     : 8
-    - name  : num_bins
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: num_cells
+    - name  : pedestrian_num_bins
       label : Num Bins
       min   : 2
       max   : 10
       v     : 9
-      
+      link  : pedestrian
+      topic : /config/pedestrian_dpm
+      in_msg: num_bins
+
   - name  : euclidean_cluster
     vars  :
     - name    : publish_ground
@@ -1175,50 +1265,137 @@ params :
         delim    : ':='   
 
   - name  : car_kf
-    topic : /config/car_kf
-    msg   : ConfigCarKf
+    topics:
+    - topic : /config/car_kf
+      msg   : ConfigCarKf
+    - topic : /config/pedestrian_kf
+      msg   : ConfigPedestrianKf
     vars  :
+    # for [car] link
     - name  : initial_lifespan
       label : Initial Lifespan
       min   : 1
       max   : 100
       v     : 4
+      link  : car
+      topic : /config/car_kf
     - name  : default_lifespan
       label : Default Lifespan
       min   : 1
       max   : 100
       v     : 8
+      link  : car
+      topic : /config/car_kf
     - name  : noise_covariance
       label : Noise Covariance
       min   : 1
       max   : 1000
       v     : 1.0
+      link  : car
+      topic : /config/car_kf
     - name  : measurement_noise_covariance
       label : Measurement Noise Covariance
       min   : 1
       max   : 1000
       v     : 25.0
+      link  : car
+      topic : /config/car_kf
     - name  : error_estimate_covariance
       label : Error estimate covariance
       min   : 1
       max   : 10000000
       v     : 1000000.0
+      link  : car
+      topic : /config/car_kf
     - name  : percentage_of_overlapping
       label : Percentage of Overlapping
       min   : 0
       max   : 100
       v     : 0.0
+      link  : car
+      topic : /config/car_kf
     - name  : orb_features
       label : Number of ORB features
       min   : 500
       max   : 5000
       v     : 2000
+      link  : car
+      topic : /config/car_kf
     - name  : use_orb
       label : Use ORB Matching?
       min   : 0
       max   : 1
       v     : 0
+      link  : car
+      topic : /config/car_kf
 
+    # for [pedestrian] link
+    - name  : pedestrian_initial_lifespan
+      label : Initial Lifespan
+      min   : 1
+      max   : 100
+      v     : 4
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: initial_lifespan
+    - name  : pedestrian_default_lifespan
+      label : Default Lifespan
+      min   : 1
+      max   : 100
+      v     : 8
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: default_lifespan
+    - name  : pedestrian_noise_covariance
+      label : Noise Covariance
+      min   : 1
+      max   : 1000
+      v     : 1.0
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: noise_covariance
+    - name  : pedestrian_measurement_noise_covariance
+      label : Measurement Noise Covariance
+      min   : 1
+      max   : 1000
+      v     : 25.0
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: measurement_noise_covariance
+    - name  : pedestrian_error_estimate_covariance
+      label : Error estimate covariance
+      min   : 1
+      max   : 10000000
+      v     : 1000000.0
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: error_estimate_covariance
+    - name  : pedestrian_percentage_of_overlapping
+      label : Percentage of Overlapping
+      min   : 0
+      max   : 100
+      v     : 0.0
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: percentage_of_overlapping
+    - name  : pedestrian_orb_features
+      label : Number of ORB features
+      min   : 500
+      max   : 5000
+      v     : 2000
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: orb_features
+    - name  : pedestrian_use_orb
+      label : Use ORB Matching?
+      min   : 0
+      max   : 1
+      v     : 0
+      link  : pedestrian
+      topic : /config/pedestrian_kf
+      in_msg: use_orb
+
+    # for [app] link
     - name     : car
       label    : Car
       kind     : checkbox
@@ -1242,6 +1419,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
     - name      : sync
       kind      : hide
       v         : False
@@ -1249,51 +1427,6 @@ params :
         dash        : ''
         delim       : ':='
         only_enable : True
-
-  - name  : pedestrian_kf
-    topic : /config/pedestrian_kf
-    msg   : ConfigPedestrianKf
-    vars  :
-    - name  : initial_lifespan
-      label : Initial Lifespan
-      min   : 1
-      max   : 100
-      v     : 4
-    - name  : default_lifespan
-      label : Default Lifespan
-      min   : 1
-      max   : 100
-      v     : 8
-    - name  : noise_covariance
-      label : Noise Covariance
-      min   : 1
-      max   : 1000
-      v     : 1.0
-    - name  : measurement_noise_covariance
-      label : Measurement Noise Covariance
-      min   : 1
-      max   : 1000
-      v     : 25.0
-    - name  : error_estimate_covariance
-      label : Error estimate covariance
-      min   : 1
-      max   : 10000000
-      v     : 1000000.0
-    - name  : percentage_of_overlapping
-      label : Percentage of Overlapping
-      min   : 0
-      max   : 100
-      v     : 0.0
-    - name  : orb_features
-      label : Number of ORB features
-      min   : 500
-      max   : 5000
-      v     : 2000
-    - name  : use_orb
-      label : Use ORB Matching?
-      min   : 0
-      max   : 1
-      v     : 0
 
   - name : obj_reproj
     vars :
@@ -1320,6 +1453,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
     - name      : sync
       kind      : hide
       v         : False
@@ -1375,6 +1509,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
 
   - name : region_tlr
     topic: /config/superimpose
@@ -1393,6 +1528,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
 
   - name  : traffic_light
     vars :
@@ -1554,35 +1690,92 @@ params :
       v         : 1.0
 
   - name  : car_fusion
-    topic : /config/car_fusion
-    msg   : ConfigCarFusion
+    topics:
+    - topic : /config/car_fusion
+      msg   : ConfigCarFusion
+    - topic : /config/pedestrian_fusion
+      msg   : ConfigPedestrianFusion
     vars  :
+    # for [pedestiran] link
     - name  : min_low_height
       label : Minimum Height(Lower Bound)
       min   : -2
       max   : 0
       v     : -1.5
+      link  : car
+      topic : /config/car_fusion
     - name  : max_low_height
       label : Minimum Height(Upper Bound)
       min   : -2
       max   : 0
       v     : -1.0
+      link  : car
+      topic : /config/car_fusion
     - name  : max_height
       label : Maximum Height
       min   : 0
       max   : 10
       v     : 2.0
+      link  : car
+      topic : /config/car_fusion
     - name  : min_points
       label : Min Points in Box
       min   : 1
       max   : 100
       v     : 2
+      link  : car
+      topic : /config/car_fusion
     - name  : dispersion
       label : Coefficient of Variation
       min   : 0.0
       max   : 5.0
       v     : 1.0
+      link  : car
+      topic : /config/car_fusion
 
+    # for [pedestiran] link
+    - name  : pedestrian_min_low_height
+      label : Minimum Height(Lower Bound)
+      min   : -2
+      max   : 0
+      v     : -1.5
+      link  : pedestrian
+      topic : /config/pedestrian_fusion
+      in_msg: min_low_height
+    - name  : pedestrian_max_low_height
+      label : Minimum Height(Upper Bound)
+      min   : -2
+      max   : 0
+      v     : -1.0
+      link  : pedestrian
+      topic : /config/pedestrian_fusion
+      in_msg: max_low_height
+    - name  : pedestrian_max_height
+      label : Maximum Height
+      min   : 0
+      max   : 10
+      v     : 2.0
+      link  : pedestrian
+      topic : /config/pedestrian_fusion
+      in_msg: max_height
+    - name  : pedestrian_min_points
+      label : Min Points in Box
+      min   : 1
+      max   : 100
+      v     : 2
+      link  : pedestrian
+      topic : /config/pedestrian_fusion
+      in_msg: min_points
+    - name  : pedestrian_dispersion
+      label : Coefficient of Variation
+      min   : 0.0
+      max   : 5.0
+      v     : 1.0
+      link  : pedestrian
+      topic : /config/pedestrian_fusion
+      in_msg: dispersion
+
+    # for [app] link
     - name     : car
       label    : Car
       kind     : checkbox
@@ -1604,36 +1797,6 @@ params :
         dash        : ''
         delim       : ':='
         only_enable : True
-
-  - name  : pedestrian_fusion
-    topic : /config/pedestrian_fusion
-    msg   : ConfigPedestrianFusion
-    vars  :
-    - name  : min_low_height
-      label : Minimum Height(Lower Bound)
-      min   : -2
-      max   : 0
-      v     : -1.5
-    - name  : max_low_height
-      label : Minimum Height(Upper Bound)
-      min   : -2
-      max   : 0
-      v     : -1.0
-    - name  : max_height
-      label : Maximum Height
-      min   : 0
-      max   : 10
-      v     : 2.0
-    - name  : min_points
-      label : Min Points in Box
-      min   : 1
-      max   : 100
-      v     : 2
-    - name  : dispersion
-      label : Coefficient of Variation
-      min   : 0.0
-      max   : 5.0
-      v     : 1.0
 
   - name  : rcnn
     topic : /config/rcnn
@@ -1683,6 +1846,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
 
   - name : viewer_sel_cam
     vars :
@@ -1695,6 +1859,7 @@ params :
         dash         : ''
         delim        : ':='
         only_enable  : True
+      link         : sel_cam
 
   - name : laserscan2costmap
     vars :

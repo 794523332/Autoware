@@ -292,10 +292,10 @@ class MyFrame(rtmgr.MyFrame):
 
 		szr = wx.BoxSizer(wx.VERTICAL)
 		for cc in self.interface_dic.get('control_check', []):
-			pdic = {}
+			pdic = Pdic(self)
 			prm = self.get_param(cc.get('param'))
 			for var in prm['vars']:
-				pdic[ var['name'] ] = var['v']
+				pdic.set(var['name'], var['v'])
 			gdic = self.gdic_get_1st(cc)
 			panel = ParamPanel(self.panel_interface_cc, frame=self, pdic=pdic, gdic=gdic, prm=prm)
 			szr.Add(panel, 0, wx.EXPAND)
@@ -564,8 +564,8 @@ class MyFrame(rtmgr.MyFrame):
 				prm = self.get_param(d2.get('param'))
 				for var in prm.get('vars'):
 					name = var.get('name')
-					if name not in pdic and 'v' in var:
-						pdic[name] = var.get('v')
+					if not pdic.has(name):
+                                                pdic.set(name, var.get('v'))
 
 				for (name, v) in pdic.items():
 					restore = eval( gdic.get(name, {}).get('restore', 'lambda a : None') )
@@ -711,6 +711,7 @@ class MyFrame(rtmgr.MyFrame):
 		(pdic, gdic, prm) = self.obj_to_pdic_gdic_prm(obj)
 		if pdic is None or prm is None:
 			return
+		gdic['curr_link'] = obj.GetLabel() if hasattr(obj, 'GetLabel') else None
 		dic_list_push(gdic, 'dialog_type', 'config')
 		klass_dlg = globals().get(gdic_dialog_name_get(gdic), MyDialogParam)
 		dlg = klass_dlg(self, pdic=pdic, gdic=gdic, prm=prm)
@@ -728,6 +729,7 @@ class MyFrame(rtmgr.MyFrame):
 			var = self.prm_var(prm, 'camera_id', {})
 			var['choices'] = ids
 
+			gdic['curr_link'] = 'sel_cam'
 			dic_list_push(gdic, 'dialog_type', 'sel_cam')
 			klass_dlg = globals().get(gdic_dialog_name_get(gdic), MyDialogParam)
 			dlg = klass_dlg(self, pdic=pdic, gdic=gdic, prm=prm)
@@ -847,17 +849,16 @@ class MyFrame(rtmgr.MyFrame):
 		return ( d.get('pdic'), d.get('gdic'), d.get('param') )
 
 	def update_func(self, pdic, gdic, prm):
-		pdic_empty = (pdic == {})
 		for var in prm.get('vars', []):
 			name = var.get('name')
 			gdic_v = gdic.get(name, {})
 			func = gdic_v.get('func')
-			if func is None and not pdic_empty:
+			if func is None and not pdic.is_empty():
 				continue
 			v = var.get('v')
 			if func is not None:
 				v = eval(func) if type(func) is str else func()
-			pdic[ name ] = v
+			pdic.set(name, v)
 
 			hook = gdic_v.get('update_hook')
 			if hook:
@@ -869,7 +870,7 @@ class MyFrame(rtmgr.MyFrame):
 				if hook:
 					hook(hook_var.get('args', {}))
 
-		if 'pub' in prm:
+		if 'topics' in prm:
 			self.publish_param_topic(pdic, prm)
 		self.rosparam_set(pdic, prm)
 		self.update_depend_enable(pdic, gdic, prm)
@@ -941,29 +942,32 @@ class MyFrame(rtmgr.MyFrame):
 			self.obj_enables_set(vp, 'depend', v)
 
 	def publish_param_topic(self, pdic, prm):
-		pub = prm['pub']
-		klass_msg = globals()[ prm['msg'] ]
-		msg = klass_msg()
-
-		for (name, v) in pdic.items():
-			if prm.get('topic') == '/twist_cmd' and name == 'twist.angular.z':
-				v = -v
-			(obj, attr) = msg_path_to_obj_attr(msg, name)
-			if obj and attr in obj.__slots__:
-				type_str = obj._slot_types[ obj.__slots__.index(attr) ]
-				setattr(obj, attr, str_to_rosval(v, type_str, v))
+		for d in prm.get('topics'):
+			msg = d.get('klass_msg')()
+			topic = d.get('topic')
+			for (name, v) in pdic.items():
+				var = self.get_var(prm, name, {})
+				if var.get('topic', topic) != topic:
+					continue
+				name = var.get('in_msg', name)
+				if topic == '/twist_cmd' and name == 'twist.angular.z':
+					v = -v
+				(obj, attr) = msg_path_to_obj_attr(msg, name)
+				if obj and attr in obj.__slots__:
+					type_str = obj._slot_types[ obj.__slots__.index(attr) ]
+					setattr(obj, attr, str_to_rosval(v, type_str, v))
 		
-		if 'stamp' in prm.get('flags', []):
-			(obj, attr) = msg_path_to_obj_attr(msg, 'header.stamp')
-			setattr(obj, attr, rospy.get_rostime())
+			if 'stamp' in prm.get('flags', []):
+				(obj, attr) = msg_path_to_obj_attr(msg, 'header.stamp')
+				setattr(obj, attr, rospy.get_rostime())
 
-		pub.publish(msg)
+			d.get('pub').publish(msg)
 
 	def rosparam_set(self, pdic, prm):
 		rosparams = None
 		for var in prm.get('vars', []):
 			name = var['name']
-			if 'rosparam' not in var or name not in pdic:
+			if 'rosparam' not in var or not pdic.has(name):
 				continue
 			rosparam = var['rosparam']
 			v = pdic.get(name)
@@ -1117,6 +1121,7 @@ class MyFrame(rtmgr.MyFrame):
 		name = dic['name']
 		pdic = self.load_dic_pdic_setup(name, dic)
 		gdic = self.gdic_get_1st(dic)
+		dic_getset(gdic, 'def_link', 'config')
 		prm = self.get_param(dic.get('param'))
 		self.add_cfg_info(cfg_obj, obj, name, pdic, gdic, True, prm)
 		return hszr
@@ -1701,9 +1706,11 @@ class MyFrame(rtmgr.MyFrame):
 
 	def add_params(self, params):
 		for prm in params:
-			if 'topic' in prm and 'msg' in prm:
-				klass_msg = globals()[ prm['msg'] ]
-				prm['pub'] = rospy.Publisher(prm['topic'], klass_msg, latch=True, queue_size=10)
+			if 'topics' not in prm and 'topic' in prm and 'msg' in prm:
+				prm['topics'] = [ { 'topic':prm.get('topic'), 'msg':prm.get('msg') } ]
+			for d in prm.get('topics', []):
+				d['klass_msg'] = globals()[ d.get('msg') ]
+				d['pub'] = rospy.Publisher(d.get('topic'), d.get('klass_msg'), latch=True, queue_size=10)
 		self.params += params
 
 	def gdic_get_1st(self, dic):
@@ -1977,8 +1984,10 @@ class MyFrame(rtmgr.MyFrame):
 				add_objs = []
 				self.new_link(item, name, pdic, self.sys_gdic, pnl, 'sys', 'sys', add_objs)
 				gdic = self.gdic_get_1st(items)
+				dic_getset(gdic, 'def_link', 'app')
 				if 'param' in items:
-					self.new_link(item, name, pdic, gdic, pnl, 'app', items.get('param'), add_objs)
+					for link in dic_getset(gdic, 'links', ['app']):
+						self.new_link(item, name, pdic, gdic, pnl, link, items.get('param'), add_objs)
 				else:
 					self.add_cfg_info(item, item, name, None, gdic, False, None)
 				szr = sizer_wrap(add_objs, wx.HORIZONTAL, parent=pnl)
@@ -2003,7 +2012,9 @@ class MyFrame(rtmgr.MyFrame):
 
 	def load_dic_pdic_setup(self, name, dic):
 		name = dic.get('share_val', dic.get('name', name))
-		pdic = self.load_dic.get(name, {})
+		pdic_dic = self.load_dic.get(name, {})
+		share = dic.get('share', {})
+		pdic = Pdic(self, pdic_dic, share)
 		self.load_dic[ name ] = pdic
 		return pdic
 
@@ -2330,7 +2341,13 @@ class ParamPanel(wx.Panel):
 			var_lst = lambda name, vars : [ var for var in vars if var.get('name') == name ]
 			vars = reduce( lambda lst, name : lst + var_lst(name, vars), self.gdic.get('show_order'), [] )
 
+		curr_link = self.gdic.get('curr_link')
+		def_link = self.gdic.get('def_link')
+
 		for var in vars:
+			if var.get('link', def_link) != curr_link:
+				continue
+
 			name = var.get('name')
 
 			if not gdic_dialog_type_chk(self.gdic, name):
@@ -2975,6 +2992,57 @@ class StrValObj:
 		self.v = v
 	def GetValue(self):
 		return self.v
+
+class Pdic:
+	def __init__(self, frame, dic={}, share={}):
+		self.frame = frame
+		self.dic = dic
+		self.share = share
+		self.to_pdic = {}
+
+	def share_get(self, name):
+		if name not in self.share:
+			return False
+		if name not in self.to_pdic:
+			to_nm = self.share.get(name)
+			to_p = self.frame.cfg_dic( {'name':to_nm} ).get('pdic')
+			if to_p is None:
+				print 'not found share pdic {}'.format(to_nm)
+				return None
+			self.to_pdic[name] = to_p
+		return self.to_pdic.get(name)
+
+	def get(self, name, def_ret=None):
+		to_p = self.share_get(name)
+		if to_p:
+			return to_p.get(name, def_ret)
+		return self.dic.get(name, def_ret) if to_p is False else def_ret
+
+	def set(self, name, v):
+		to_p = self.share_get(name)
+		if to_p:
+			to_p.set(name, v)
+		if to_p is False:
+			self.dic[name] = v
+
+	def has(self, name):
+		to_p = self.share_get(name)
+		if to_p:
+			return to_p.has(name)
+		return name in self.dic
+
+	def items(self):
+		return [ (name, self.get(name)) for name in self.dic.keys() + self.share.keys() ]
+
+	def is_empty(self):
+		return self.dic == {} and not any([ self.has(name) for name in self.share.keys() ])
+
+	def copy(self):
+		return dict(self.items())
+
+	def update(self, dic):
+		for (k,v) in dic.items():
+			self.set(k, v)
 
 class MyApp(wx.App):
 	def OnInit(self):
